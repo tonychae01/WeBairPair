@@ -21,7 +21,15 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "POST" && url.pathname === "/api/request-verification") {
-      return requestVerification(request, env);
+      try {
+        return await requestVerification(request, env);
+      } catch (error) {
+        const requestId = crypto.randomUUID();
+        console.error(`Verification request failed [${requestId}]`, error);
+        return json({
+          error: `We couldn't send the confirmation email. Please try again or contact hello@webairpair.com. Reference: ${requestId}`,
+        }, 502);
+      }
     }
 
     if (request.method === "GET" && url.pathname === "/verify") {

@@ -17,8 +17,11 @@ form.addEventListener("submit", async (event) => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email, action: submitter.dataset.action }),
     });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Something went wrong.");
+    const contentType = response.headers.get("content-type") || "";
+    const result = contentType.includes("application/json") ? await response.json() : null;
+    if (!response.ok || !result) {
+      throw new Error(result?.error || "We couldn't complete that request. Please try again.");
+    }
 
     status.textContent = result.message;
     if (result.verificationUrl) {
