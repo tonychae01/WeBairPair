@@ -1,0 +1,34 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "webairpair",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-03",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/verify"]
+  },
+  "routes": [
+    {
+      "pattern": "webairpair.com",
+      "custom_domain": true
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "webairpair",
+      "database_id": "efc06cc3-7277-4728-b9fb-916a8d336b5e",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": ["0 17 1 * *"]
+  },
+  "vars": {
+    "APP_URL": "https://webairpair.com",
+    "ENVIRONMENT": "production",
+    "AWS_REGION": "us-west-2",
+    "SES_FROM_EMAIL": "pairings@webairpair.com"
+  }
+}

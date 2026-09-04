@@ -1,0 +1,4 @@
+# Add these only when you want local development to send real email.
+AWS_ACCESS_KEY_ID=""
+AWS_SECRET_ACCESS_KEY=""
+

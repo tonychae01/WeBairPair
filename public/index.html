@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Monthly random 1:1 pairings for Berkeley AI researchers.">
+    <title>WeBairPair</title>
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main class="home">
+      <img class="logo" src="/logo.png" alt="WeBairPair">
+      <div class="intro">
+        <h1>Meet someone new at Berkeley.</h1>
+        <p>WeBairPair randomly connects people across BAIR and EECS for a casual monthly 1:1 chat. Pairing invites are sent on the first day of each month. Join by the end of the previous day to be included in that month’s match.</p>
+      </div>
+
+      <form id="pair-form" novalidate>
+        <label for="email">Berkeley email</label>
+        <div class="field-row">
+          <input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@berkeley.edu" required>
+          <button type="submit" data-action="opt_in">Join</button>
+          <button type="submit" class="secondary" data-action="opt_out">Leave</button>
+        </div>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+      </form>
+    </main>
+    <footer>Questions or having trouble? Contact <a href="mailto:hello@webairpair.com">hello@webairpair.com</a>.</footer>
+  </body>
+</html>

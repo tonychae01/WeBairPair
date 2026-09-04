@@ -1,0 +1,22 @@
+{
+  "name": "webairpair",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --var APP_URL:http://localhost:8787 --var ENVIRONMENT:development",
+    "db:migrate:local": "wrangler d1 migrations apply webairpair --local",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "edmonds-blossom": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/edmonds-blossom": "^1.0.4",
+    "@cloudflare/workers-types": "^4.20260702.1",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.34.0"
+  }
+}
