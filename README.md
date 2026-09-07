@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/logo-qr.png" alt="WeBairPair" width="560">
+</p>
+
 # WeBairPair
 
 Random monthly 1:1 chats connecting people across BAIR and EECS at the Gateway.
@@ -39,3 +43,17 @@ The monthly cron runs at 17:00 UTC on the first day of each month. The matcher r
 npm test
 npm run typecheck
 ```
+
+## Brand assets
+
+Everything under `public/` is served by the Worker at the matching path.
+
+| File | Served at | Used by |
+| --- | --- | --- |
+| `public/logo.png` | `/logo.png` | Landing page (`public/index.html`) and the verification page rendered in `src/index.ts` |
+| `public/logo-qr.png` | `/logo-qr.png` | Poster/flyer variant: same wordmark with the bear wearing 3D glasses and carrying a QR saddle. Used as the README banner; not referenced by the site |
+| `public/favicon.png` | `/favicon.png` | Browser tab icon |
+
+`Picture1.png` in the repository root is an older copy of the plain logo and is not referenced by any page.
+
+The QR code in `logo-qr.png` is part of the generated artwork and has not been verified to scan. Regenerate it with a real encoder before using the file on printed material.
