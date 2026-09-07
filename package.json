@@ -10,10 +10,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "edmonds-blossom": "^1.0.0"
+    "edmonds-blossom-fixed": "^1.0.1"
   },
   "devDependencies": {
-    "@types/edmonds-blossom": "^1.0.4",
     "@cloudflare/workers-types": "^4.20260702.1",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4",

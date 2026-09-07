@@ -37,6 +37,14 @@ If SES credentials change, update `.dev.vars` and upload them with `npx wrangler
 
 The monthly cron runs at 17:00 UTC on the first day of each month. The matcher reads the full `pairings` history and uses weighted maximum matching to avoid repeat pairs except where a repeat is mathematically necessary to match the group. With an odd participant count, it favors someone who has never sat out, then the person who sat out least recently, and emails them that they remain opted in. Pairing and unmatched notifications are resumable if sending fails halfway through.
 
+To trigger a pairing against local D1 while `npm run dev` is running:
+
+```sh
+curl -X POST http://localhost:8787/api/dev/run-pairing
+```
+
+This route returns `404` in production.
+
 ## Checks
 
 ```sh

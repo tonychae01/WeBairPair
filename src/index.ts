@@ -1,4 +1,4 @@
-import blossom from "edmonds-blossom";
+import blossom from "edmonds-blossom-fixed";
 
 export interface Env {
   DB: D1Database;
@@ -19,6 +19,21 @@ const encoder = new TextEncoder();
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    if (request.method === "POST" && url.pathname === "/api/dev/run-pairing") {
+      if (env.ENVIRONMENT !== "development") {
+        return json({ error: "Not found." }, 404);
+      }
+      try {
+        await runMonthlyPairing(env);
+        return json({ message: "Local pairing run completed." });
+      } catch (error) {
+        console.error("Local pairing test failed", error);
+        return json({
+          error: error instanceof Error ? error.message : "Local pairing test failed.",
+        }, 500);
+      }
+    }
 
     if (request.method === "POST" && url.pathname === "/api/request-verification") {
       try {
@@ -43,8 +58,13 @@ export default {
     return env.ASSETS.fetch(request);
   },
 
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(runMonthlyPairing(env));
+  async scheduled(_controller: ScheduledController, env: Env) {
+    try {
+      await runMonthlyPairing(env);
+    } catch (error) {
+      console.error("Monthly pairing failed", error);
+      throw error;
+    }
   },
 } satisfies ExportedHandler<Env>;
 
