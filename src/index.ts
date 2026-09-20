@@ -1,4 +1,5 @@
 import blossom from "edmonds-blossom-fixed";
+import { handleAdminRequest } from "./admin";
 
 export interface Env {
   DB: D1Database;
@@ -9,6 +10,8 @@ export interface Env {
   SES_FROM_EMAIL: string;
   AWS_ACCESS_KEY_ID?: string;
   AWS_SECRET_ACCESS_KEY?: string;
+  ADMIN_PASSWORD?: string;
+  ADMIN_SESSION_SECRET?: string;
 }
 
 type Action = "opt_in" | "opt_out";
@@ -20,6 +23,10 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
+    if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) {
+      return handleAdminRequest(request, env);
+    }
+
     if (request.method === "POST" && url.pathname === "/api/dev/run-pairing") {
       if (env.ENVIRONMENT !== "development") {
         return json({ error: "Not found." }, 404);
@@ -29,21 +36,33 @@ export default {
         return json({ message: "Local pairing run completed." });
       } catch (error) {
         console.error("Local pairing test failed", error);
-        return json({
-          error: error instanceof Error ? error.message : "Local pairing test failed.",
-        }, 500);
+        return json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "Local pairing test failed.",
+          },
+          500,
+        );
       }
     }
 
-    if (request.method === "POST" && url.pathname === "/api/request-verification") {
+    if (
+      request.method === "POST" &&
+      url.pathname === "/api/request-verification"
+    ) {
       try {
         return await requestVerification(request, env);
       } catch (error) {
         const requestId = crypto.randomUUID();
         console.error(`Verification request failed [${requestId}]`, error);
-        return json({
-          error: `We couldn't send the confirmation email. Please try again or contact hello@webairpair.com. Reference: ${requestId}`,
-        }, 502);
+        return json(
+          {
+            error: `We couldn't send the confirmation email. Please try again or contact hello@webairpair.com. Reference: ${requestId}`,
+          },
+          502,
+        );
       }
     }
 
@@ -68,7 +87,10 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-async function requestVerification(request: Request, env: Env): Promise<Response> {
+async function requestVerification(
+  request: Request,
+  env: Env,
+): Promise<Response> {
   let body: { email?: unknown; action?: unknown };
   try {
     body = await request.json();
@@ -76,7 +98,8 @@ async function requestVerification(request: Request, env: Env): Promise<Response
     return json({ error: "Please enter a valid Berkeley email." }, 400);
   }
 
-  const email = typeof body.email === "string" ? normalizeEmail(body.email) : "";
+  const email =
+    typeof body.email === "string" ? normalizeEmail(body.email) : "";
   const action = body.action;
   if (!isBerkeleyEmail(email)) {
     return json({ error: "Use your @berkeley.edu email address." }, 400);
@@ -105,9 +128,13 @@ async function requestVerification(request: Request, env: Env): Promise<Response
 
   const token = randomToken();
   const tokenHash = await sha256Hex(token);
-  const expiresAt = new Date(now.getTime() + TOKEN_TTL_MINUTES * 60 * 1000).toISOString();
+  const expiresAt = new Date(
+    now.getTime() + TOKEN_TTL_MINUTES * 60 * 1000,
+  ).toISOString();
   await env.DB.batch([
-    env.DB.prepare("DELETE FROM verification_tokens WHERE email = ? AND action = ?").bind(email, action),
+    env.DB.prepare(
+      "DELETE FROM verification_tokens WHERE email = ? AND action = ?",
+    ).bind(email, action),
     env.DB.prepare(
       "INSERT INTO verification_tokens (token_hash, email, action, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
     ).bind(tokenHash, email, action, expiresAt, now.toISOString()),
@@ -128,7 +155,9 @@ async function requestVerification(request: Request, env: Env): Promise<Response
     ),
   });
 
-  const response: Record<string, string> = { message: "Check your Berkeley inbox for a confirmation link." };
+  const response: Record<string, string> = {
+    message: "Check your Berkeley inbox for a confirmation link.",
+  };
   if (env.ENVIRONMENT === "development" && !hasSesCredentials(env)) {
     response.verificationUrl = verificationUrl;
   }
@@ -142,13 +171,22 @@ async function verifyAction(url: URL, env: Env): Promise<Response> {
   const tokenHash = await sha256Hex(token);
   const row = await env.DB.prepare(
     "SELECT email, action, expires_at FROM verification_tokens WHERE token_hash = ?",
-  ).bind(tokenHash).first<{ email: string; action: Action; expires_at: string }>();
+  )
+    .bind(tokenHash)
+    .first<{ email: string; action: Action; expires_at: string }>();
 
   if (!row || Date.parse(row.expires_at) <= Date.now()) {
     if (row) {
-      await env.DB.prepare("DELETE FROM verification_tokens WHERE token_hash = ?").bind(tokenHash).run();
+      await env.DB.prepare(
+        "DELETE FROM verification_tokens WHERE token_hash = ?",
+      )
+        .bind(tokenHash)
+        .run();
     }
-    return verificationPage("That link has expired or has already been used. Please request a new one.", false);
+    return verificationPage(
+      "That link has expired or has already been used. Please request a new one.",
+      false,
+    );
   }
 
   const now = new Date().toISOString();
@@ -159,22 +197,33 @@ async function verifyAction(url: URL, env: Env): Promise<Response> {
        VALUES (?, ?, ?, ?)
        ON CONFLICT(email) DO UPDATE SET opted_in = excluded.opted_in, updated_at = excluded.updated_at`,
     ).bind(row.email, optedIn, now, now),
-    env.DB.prepare("DELETE FROM verification_tokens WHERE token_hash = ?").bind(tokenHash),
+    env.DB.prepare("DELETE FROM verification_tokens WHERE token_hash = ?").bind(
+      tokenHash,
+    ),
   ]);
 
   return verificationPage(
-    optedIn ? "You’re in. We’ll email you when it’s time to meet your next pair." : "You’re opted out. You can rejoin anytime.",
+    optedIn
+      ? "You’re in. We’ll email you when it’s time to meet your next pair."
+      : "You’re opted out. You can rejoin anytime.",
     true,
   );
 }
 
-export async function runMonthlyPairing(env: Env, date = new Date()): Promise<void> {
+export async function runMonthlyPairing(
+  env: Env,
+  date = new Date(),
+): Promise<void> {
   const month = date.toISOString().slice(0, 7);
   const existing = await env.DB.prepare(
     "SELECT status, unmatched_email, unmatched_sent FROM pairing_runs WHERE month = ?",
   )
     .bind(month)
-    .first<{ status: string; unmatched_email: string | null; unmatched_sent: number }>();
+    .first<{
+      status: string;
+      unmatched_email: string | null;
+      unmatched_sent: number;
+    }>();
   if (existing?.status === "completed") return;
 
   let unmatchedEmail = existing?.unmatched_email ?? undefined;
@@ -185,8 +234,9 @@ export async function runMonthlyPairing(env: Env, date = new Date()): Promise<vo
     ).all<{ email: string; last_unmatched_at: string | null }>();
     const emails = users.results.map((row) => row.email);
     secureShuffle(emails);
-    const history = await env.DB.prepare("SELECT email_a, email_b FROM pairings")
-      .all<{ email_a: string; email_b: string }>();
+    const history = await env.DB.prepare(
+      "SELECT email_a, email_b FROM pairings",
+    ).all<{ email_a: string; email_b: string }>();
     const previousPairs = new Set(
       history.results.map((pair) => pairKey(pair.email_a, pair.email_b)),
     );
@@ -203,11 +253,9 @@ export async function runMonthlyPairing(env: Env, date = new Date()): Promise<vo
     ];
     for (const [emailA, emailB] of matching.pairs) {
       statements.push(
-        env.DB.prepare("INSERT INTO pairings (month, email_a, email_b) VALUES (?, ?, ?)").bind(
-          month,
-          emailA,
-          emailB,
-        ),
+        env.DB.prepare(
+          "INSERT INTO pairings (month, email_a, email_b) VALUES (?, ?, ?)",
+        ).bind(month, emailA, emailB),
       );
     }
     await env.DB.batch(statements);
@@ -215,26 +263,40 @@ export async function runMonthlyPairing(env: Env, date = new Date()): Promise<vo
 
   const pairs = await env.DB.prepare(
     "SELECT email_a, email_b, sent_a, sent_b FROM pairings WHERE month = ?",
-  ).bind(month).all<{ email_a: string; email_b: string; sent_a: number; sent_b: number }>();
+  )
+    .bind(month)
+    .all<{
+      email_a: string;
+      email_b: string;
+      sent_a: number;
+      sent_b: number;
+    }>();
 
   for (const pair of pairs.results) {
     if (pair.sent_a && pair.sent_b) continue;
     await sendPairEmail(env, pair.email_a, pair.email_b, month);
     await env.DB.prepare(
       "UPDATE pairings SET sent_a = 1, sent_b = 1 WHERE month = ? AND email_a = ? AND email_b = ?",
-    ).bind(month, pair.email_a, pair.email_b).run();
+    )
+      .bind(month, pair.email_a, pair.email_b)
+      .run();
   }
 
   if (unmatchedEmail && !unmatchedSent) {
     await sendUnmatchedEmail(env, unmatchedEmail, month);
-    await env.DB.prepare("UPDATE pairing_runs SET unmatched_sent = 1 WHERE month = ?")
-      .bind(month).run();
+    await env.DB.prepare(
+      "UPDATE pairing_runs SET unmatched_sent = 1 WHERE month = ?",
+    )
+      .bind(month)
+      .run();
     unmatchedSent = 1;
   }
 
   const now = new Date().toISOString();
   const completionStatements = [
-    env.DB.prepare("UPDATE pairing_runs SET status = 'completed', completed_at = ? WHERE month = ?").bind(now, month),
+    env.DB.prepare(
+      "UPDATE pairing_runs SET status = 'completed', completed_at = ? WHERE month = ?",
+    ).bind(now, month),
     env.DB.prepare(
       `UPDATE users SET last_paired_at = ?, updated_at = ?
        WHERE email IN (
@@ -242,21 +304,29 @@ export async function runMonthlyPairing(env: Env, date = new Date()): Promise<vo
          UNION SELECT email_b FROM pairings WHERE month = ?
        )`,
     ).bind(now, now, month, month),
-    env.DB.prepare("DELETE FROM verification_tokens WHERE expires_at <= ?").bind(now),
-    env.DB.prepare("DELETE FROM verification_requests WHERE created_at < ?").bind(
-      new Date(date.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    ),
+    env.DB.prepare(
+      "DELETE FROM verification_tokens WHERE expires_at <= ?",
+    ).bind(now),
+    env.DB.prepare(
+      "DELETE FROM verification_requests WHERE created_at < ?",
+    ).bind(new Date(date.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()),
   ];
   if (unmatchedEmail) {
     completionStatements.push(
-      env.DB.prepare("UPDATE users SET last_unmatched_at = ?, updated_at = ? WHERE email = ?")
-        .bind(now, now, unmatchedEmail),
+      env.DB.prepare(
+        "UPDATE users SET last_unmatched_at = ?, updated_at = ? WHERE email = ?",
+      ).bind(now, now, unmatchedEmail),
     );
   }
   await env.DB.batch(completionStatements);
 }
 
-async function sendPairEmail(env: Env, emailA: string, emailB: string, month: string) {
+async function sendPairEmail(
+  env: Env,
+  emailA: string,
+  emailB: string,
+  month: string,
+) {
   const label = new Date(`${month}-02T00:00:00Z`).toLocaleDateString("en-US", {
     month: "long",
     year: "numeric",
@@ -296,7 +366,9 @@ interface EmailMessage {
 async function sendEmail(env: Env, message: EmailMessage): Promise<void> {
   if (!hasSesCredentials(env)) {
     if (env.ENVIRONMENT === "development") {
-      console.log(`[email skipped] ${message.subject} -> ${message.to.join(", ")}`);
+      console.log(
+        `[email skipped] ${message.subject} -> ${message.to.join(", ")}`,
+      );
       return;
     }
     throw new Error("SES credentials are not configured.");
@@ -327,7 +399,12 @@ async function sendEmail(env: Env, message: EmailMessage): Promise<void> {
   const canonicalRequest = `POST\n/v2/email/outbound-emails\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
   const scope = `${dateStamp}/${region}/ses/aws4_request`;
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n${await sha256Hex(canonicalRequest)}`;
-  const signingKey = await getSignatureKey(env.AWS_SECRET_ACCESS_KEY, dateStamp, region, "ses");
+  const signingKey = await getSignatureKey(
+    env.AWS_SECRET_ACCESS_KEY,
+    dateStamp,
+    region,
+    "ses",
+  );
   const signature = toHex(await hmac(signingKey, stringToSign));
   const authorization = `AWS4-HMAC-SHA256 Credential=${env.AWS_ACCESS_KEY_ID}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
@@ -346,20 +423,37 @@ async function sendEmail(env: Env, message: EmailMessage): Promise<void> {
   }
 }
 
-function hasSesCredentials(env: Env): env is Env & { AWS_ACCESS_KEY_ID: string; AWS_SECRET_ACCESS_KEY: string } {
+function hasSesCredentials(
+  env: Env,
+): env is Env & { AWS_ACCESS_KEY_ID: string; AWS_SECRET_ACCESS_KEY: string } {
   return Boolean(env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY);
 }
 
-async function getSignatureKey(secret: string, date: string, region: string, service: string): Promise<ArrayBuffer> {
+async function getSignatureKey(
+  secret: string,
+  date: string,
+  region: string,
+  service: string,
+): Promise<ArrayBuffer> {
   const kDate = await hmac(`AWS4${secret}`, date);
   const kRegion = await hmac(kDate, region);
   const kService = await hmac(kRegion, service);
   return hmac(kService, "aws4_request");
 }
 
-async function hmac(key: string | ArrayBuffer, value: string): Promise<ArrayBuffer> {
-  const keyData = typeof key === "string" ? encoder.encode(key).buffer as ArrayBuffer : key;
-  const cryptoKey = await crypto.subtle.importKey("raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+async function hmac(
+  key: string | ArrayBuffer,
+  value: string,
+): Promise<ArrayBuffer> {
+  const keyData =
+    typeof key === "string" ? (encoder.encode(key).buffer as ArrayBuffer) : key;
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    keyData,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
   return crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(value));
 }
 
@@ -368,19 +462,25 @@ async function sha256Hex(value: string): Promise<string> {
 }
 
 function toHex(value: ArrayBuffer): string {
-  return [...new Uint8Array(value)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return [...new Uint8Array(value)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function randomToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 function secureShuffle<T>(items: T[]): void {
   for (let i = items.length - 1; i > 0; i--) {
     const max = Math.floor(0x100000000 / (i + 1)) * (i + 1);
     let random: number;
-    do random = crypto.getRandomValues(new Uint32Array(1))[0]; while (random >= max);
+    do random = crypto.getRandomValues(new Uint32Array(1))[0];
+    while (random >= max);
     const j = random % (i + 1);
     [items[i], items[j]] = [items[j], items[i]];
   }
@@ -400,21 +500,26 @@ export function createPairing(
   const edges: Array<[number, number, number]> = [];
   const unmatchedPreference = new Map(
     [...emails]
-      .sort((emailA, emailB) => compareUnmatchedPriority(
-        lastUnmatchedByEmail.get(emailA),
-        lastUnmatchedByEmail.get(emailB),
-      ))
+      .sort((emailA, emailB) =>
+        compareUnmatchedPriority(
+          lastUnmatchedByEmail.get(emailA),
+          lastUnmatchedByEmail.get(emailB),
+        ),
+      )
       .map((email, index) => [email, emails.length - index]),
   );
   const newPairWeight = emails.length + 2;
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
       const includesDummy = i === dummyIndex || j === dummyIndex;
-      const isPrevious = !includesDummy && previousPairs.has(pairKey(nodes[i], nodes[j]));
+      const isPrevious =
+        !includesDummy && previousPairs.has(pairKey(nodes[i], nodes[j]));
       const realEmail = i === dummyIndex ? nodes[j] : nodes[i];
       const weight = includesDummy
-        ? unmatchedPreference.get(realEmail) ?? 1
-        : isPrevious ? 1 : newPairWeight;
+        ? (unmatchedPreference.get(realEmail) ?? 1)
+        : isPrevious
+          ? 1
+          : newPairWeight;
       // One new-pair edge outweighs the full fairness range, so history remains primary.
       edges.push([i, j, weight]);
     }
@@ -464,9 +569,17 @@ function capitalize(value: string): string {
 }
 
 function escapeHtml(value: string): string {
-  return value.replace(/[&<>'"]/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
-  })[character]!);
+  return value.replace(
+    /[&<>'"]/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "'": "&#39;",
+        '"': "&quot;",
+      })[character]!,
+  );
 }
 
 function emailLayout(title: string, content: string): string {
@@ -475,9 +588,14 @@ function emailLayout(title: string, content: string): string {
 
 function verificationPage(message: string, success: boolean): Response {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WeBairPair</title><link rel="stylesheet" href="/styles.css"></head><body><main class="verify"><img src="/logo.png" alt="WeBairPair"><h1>${success ? "All set" : "Link unavailable"}</h1><p>${escapeHtml(message)}</p><a class="button-link" href="/">Back to WeBairPair</a></main></body></html>`;
-  return new Response(html, { headers: { "content-type": "text/html;charset=UTF-8" } });
+  return new Response(html, {
+    headers: { "content-type": "text/html;charset=UTF-8" },
+  });
 }
 
 function json(data: unknown, status = 200): Response {
-  return Response.json(data, { status, headers: { "cache-control": "no-store" } });
+  return Response.json(data, {
+    status,
+    headers: { "cache-control": "no-store" },
+  });
 }

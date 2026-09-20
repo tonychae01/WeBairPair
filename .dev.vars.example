@@ -2,3 +2,6 @@
 AWS_ACCESS_KEY_ID=""
 AWS_SECRET_ACCESS_KEY=""
 
+# Use a unique password of at least 16 characters and a separate 32-byte hex value.
+ADMIN_PASSWORD=""
+ADMIN_SESSION_SECRET=""

@@ -35,6 +35,15 @@ npx wrangler deploy
 
 If SES credentials change, update `.dev.vars` and upload them with `npx wrangler secret bulk .dev.vars` before deploying.
 
+The read-only registration dashboard is available at `/admin`. It requires two Worker secrets that must also be present in `.dev.vars` for local development:
+
+```sh
+npx wrangler secret put ADMIN_PASSWORD
+openssl rand -hex 32 | npx wrangler secret put ADMIN_SESSION_SECRET
+```
+
+The password must contain at least 16 characters, and the session secret must be a 64-character hex value. Dashboard sessions expire after eight hours. Login attempts are rate-limited using keyed, pseudonymous IP identifiers, and admin responses are not cached.
+
 The monthly cron runs at 17:00 UTC on the first day of each month. The matcher reads the full `pairings` history and uses weighted maximum matching to avoid repeat pairs except where a repeat is mathematically necessary to match the group. With an odd participant count, it favors someone who has never sat out, then the person who sat out least recently, and emails them that they remain opted in. Pairing and unmatched notifications are resumable if sending fails halfway through.
 
 To trigger a pairing against local D1 while `npm run dev` is running:
